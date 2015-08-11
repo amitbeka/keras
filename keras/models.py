@@ -578,7 +578,7 @@ class Sequential(Model, containers.Sequential):
                 outs[1] += vals[1] * len(X)
             else:
                 outs[0] += vals * len(X)
-            if verbose:
+            if verbose == 1:
                 processed += len(X)
                 progbar.update(processed)
 
