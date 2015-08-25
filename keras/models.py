@@ -500,6 +500,8 @@ class Sequential(Model, containers.Sequential):
                 for l, o in zip(out_labels, val_outs):
                     epoch_logs['val_' + l] = o
             callbacks.on_epoch_end(epoch)
+            if 'val_loss' in epoch_logs:
+                print("\nValidation -- loss: {} - acc: {}".format(epoch_logs['val_loss'], epoch_logs.get('val_acc')))
             if self.stop_training:
                 break
 
