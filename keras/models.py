@@ -78,13 +78,25 @@ def slice_X(X, start=None, stop=None):
 
 
 def weighted_objective(fn):
-    def weighted(y_true, y_pred, weights):
-        # it's important that 0 * Inf == 0, not NaN, so I need to mask first
-        masked_y_true = y_true[weights.nonzero()[:-1]]
-        masked_y_pred = y_pred[weights.nonzero()[:-1]]
-        masked_weights = weights[weights.nonzero()]
-        obj_output = fn(masked_y_true, masked_y_pred)
-        return (masked_weights.flatten() * obj_output.flatten()).mean()
+    def weighted(y_true, y_pred, weights, mask=None):
+        '''
+        y_true dimension:  (sample, timestep, dims)
+        y_pred dimension:  (sample, timestep, dims)
+        weights dimension: (sample, timestep, 1)
+        '''
+        # it's important that 0 * Inf == 0, not NaN, so I need to filter
+        # those out first
+        filtered_y_true = y_true[weights.nonzero()[:-1]]
+        filtered_y_pred = y_pred[weights.nonzero()[:-1]]
+        filtered_weights = weights[weights.nonzero()]
+        obj_output = fn(filtered_y_true, filtered_y_pred)
+        weighted = filtered_weights * obj_output
+        if mask is None:
+            # Instead of calling mean() here, we divide by the sum of filtered_weights.
+            return weighted.sum() / filtered_weights.sum()
+        else:
+            filtered_mask = mask[weights.nonzero()[:-1]]
+            return weighted.sum() / (filtered_mask * filtered_weights).sum()
     return weighted
 
 
@@ -92,15 +104,18 @@ def standardize_weights(y, sample_weight=None, class_weight=None):
     if sample_weight is not None:
         return standardize_y(sample_weight)
     elif isinstance(class_weight, dict):
-        if len(y.shape) > 2:
-            raise Exception('class_weight not supported for 3+ dimensional targets.')
+        if len(y.shape) > 3:
+            raise Exception('class_weight not supported for 4+ dimensional targets.')
+        yshape = y.shape
+        y = np.reshape(y, (-1,yshape[-1])) # for time-distributed data, collapse time and sample
         if y.shape[1] > 1:
             y_classes = y.argmax(axis=1)
         elif y.shape[1] == 1:
             y_classes = np.reshape(y, y.shape[0])
         else:
             y_classes = y
-        return np.expand_dims(np.array(list(map(lambda x: class_weight[x], y_classes))), 1)
+        class_weights = np.asarray([class_weight[cls] for cls in y_classes])
+        return np.reshape(class_weights, yshape[:-1] + (1,)) # uncollapse initial dimensions
     else:
         return np.ones(y.shape[:-1] + (1,))
 
@@ -335,7 +350,7 @@ class Model(object):
         # dump model configuration to json string
         import json
         config = self.get_config()
-        return json.dump(config)
+        return json.dumps(config)
 
 
 class Sequential(Model, containers.Sequential):
@@ -371,8 +386,12 @@ class Sequential(Model, containers.Sequential):
 
         self.weights = T.ones_like(self.y_train)
 
-        train_loss = weighted_loss(self.y, self.y_train, self.weights)
-        test_loss = weighted_loss(self.y, self.y_test, self.weights)
+        if hasattr(self.layers[-1], "get_output_mask"):
+            mask = self.layers[-1].get_output_mask()
+        else:
+            mask = None
+        train_loss = weighted_loss(self.y, self.y_train, self.weights, mask)
+        test_loss = weighted_loss(self.y, self.y_test, self.weights, mask)
 
         train_loss.name = 'train_loss'
         test_loss.name = 'test_loss'
@@ -667,11 +686,16 @@ class Graph(Model, containers.Graph):
             ys_train.append(y_train)
             ys_test.append(y_test)
 
+            if hasattr(output, "get_output_mask"):
+                mask = output.get_output_mask()
+            else:
+                mask = None
+
             weight = T.ones_like(y_test)
             weights.append(weight)
             weighted_loss = weighted_objective(objectives.get(loss_fn))
-            train_loss += weighted_loss(y, y_train, weight)
-            test_loss += weighted_loss(y, y_test, weight)
+            train_loss += weighted_loss(y, y_train, weight, mask)
+            test_loss += weighted_loss(y, y_test, weight, mask)
 
         train_loss.name = 'train_loss'
         test_loss.name = 'test_loss'
@@ -731,8 +755,8 @@ class Graph(Model, containers.Graph):
             val_ins = [validation_data[name] for name in self.input_order] + [standardize_y(validation_data[name]) for name in self.output_order] + sample_weight
 
         f = self._train
-        out_labels = self.output_order
-        metrics = self.output_order + ['val_' + m for m in self.output_order]
+        out_labels = ['loss']
+        metrics = ['loss', 'val_loss']
         history = self._fit(f, ins, out_labels=out_labels, batch_size=batch_size, nb_epoch=nb_epoch,
                             verbose=verbose, callbacks=callbacks,
                             validation_split=validation_split, val_f=val_f, val_ins=val_ins,
