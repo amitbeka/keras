@@ -2,7 +2,7 @@ from setuptools import setup
 from setuptools import find_packages
 
 
-setup(name='Keras',
+setup(name='keras_bidi',
       version='0.2.0',
       description='Theano-based Deep Learning library',
       author='Francois Chollet',
