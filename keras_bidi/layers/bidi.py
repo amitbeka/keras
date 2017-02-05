@@ -4,7 +4,7 @@
 import types
 import theano.tensor as T
 
-from keras.layers.recurrent import Recurrent
+from keras_bidi.layers.recurrent import Recurrent
 
 def _get_reversed_input(self, train=False):
     if hasattr(self, 'previous'):
@@ -96,12 +96,12 @@ class Bidirectional(Recurrent):
         else:
             # Must import inside the function, because in order to support loading
             # we must import this module inside layer_utils... ugly
-            from keras.utils.layer_utils import container_from_config
+            from keras_bidi.utils.layer_utils import container_from_config
             self.forward = container_from_config(forward_conf)
         if backward is not None:
             self.backward = backward
         else:
-            from keras.utils.layer_utils import container_from_config
+            from keras_bidi.utils.layer_utils import container_from_config
             self.backward = container_from_config(backward_conf)
         self.return_sequences = return_sequences
         self.truncate_gradient = truncate_gradient

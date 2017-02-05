@@ -5,8 +5,8 @@ import theano
 import theano.tensor as T
 floatX = theano.config.floatX
 
-from keras.layers.recurrent import Recurrent, GRU, LSTM
-from keras.utils.theano_utils import shared_zeros, alloc_zeros_matrix, shared_scalar
+from keras_bidi.layers.recurrent import Recurrent, GRU, LSTM
+from keras_bidi.utils.theano_utils import shared_zeros, alloc_zeros_matrix, shared_scalar
 tol = 1e-4
 
 
